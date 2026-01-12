@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Next-SimpleTex-Ark</title>
+  <link rel="icon" href="favicon.png" type="image/png" sizes="32x32">
+  <!-- 引入KaTeX -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #f5f7fa;
+      padding: 40px 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+      padding: 30px;
+      position: relative;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+      font-size: 24px;
+    }
+
+    .upload-area {
+      border: 2px dashed #e0e6ed;
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 30px;
+      position: relative;
+    }
+
+    .upload-area:hover {
+      border-color: #4096ff;
+      background-color: #f8fbff;
+    }
+
+    .upload-area input {
+      display: none;
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      color: #909399;
+      margin-bottom: 16px;
+    }
+
+    .upload-text {
+      color: #666;
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .upload-tip {
+      color: #999;
+      font-size: 14px;
+    }
+
+    .preview-img {
+      max-width: 100%;
+      max-height: 300px;
+      margin: 20px auto;
+      display: none;
+      border-radius: 4px;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .result-area {
+      display: none;
+      margin-top: 20px;
+    }
+
+    .result-title {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    /* 侧边设置按钮样式 */
+    .settings-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background-color: #ffffff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      text-align: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .settings-btn:hover {
+      background-color: #e0e0e0;
+      transform: scale(1.05);
+    }
+
+    /* 模态窗样式 */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal-container {
+      background-color: white;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 650px;
+      padding: 30px;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+      transform: translateY(-20px);
+      transition: all 0.3s ease;
+    }
+
+    .modal-overlay.active .modal-container {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .close-modal-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #999;
+      transition: color 0.2s ease;
+    }
+
+    .close-modal-btn:hover {
+      color: #f5222d;
+    }
+
+    /* 配置表单样式调整 */
+    .config-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .config-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .config-item label {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .config-item input,
+    .config-item select {
+      padding: 8px 12px;
+      border: 1px solid #e0e6ed;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .config-item input:focus,
+    .config-item select:focus {
+      border-color: #4096ff;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .save-config-btn,
+    .cancel-config-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .save-config-btn {
+      background-color: #4096ff;
+      color: white;
+    }
+
+    .save-config-btn:hover {
+      background-color: #337ecc;
+    }
+
+    .cancel-config-btn {
+      background-color: #f5f7fa;
+      color: #666;
+    }
+
+    .cancel-config-btn:hover {
+      background-color: #e5e6eb;
+    }
+
+
+    /* 代码编辑区样式（可编辑） */
+    .latex-code {
+      width: 100%;
+      min-height: 100px;
+      padding: 16px;
+      border: 1px solid #e0e6ed;
+      border-radius: 8px 8px 0 0;
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: vertical;
+      background-color: #fafafa;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      outline: none;
+    }
+
+    .latex-code:focus {
+      border-color: #4096ff;
+    }
+
+    /* 公式渲染区域（KaTeX） */
+    .latex-preview {
+      width: 100%;
+      min-height: 80px;
+      padding: 20px;
+      border: 1px solid #e0e6ed;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      background-color: white;
+      text-align: center;
+      font-size: 18px;
+      color: #333;
+      /* KaTeX渲染优化 */
+      overflow-x: auto;
+    }
+
+    /* KaTeX公式溢出适配 */
+    .katex {
+      font-size: 1.2em !important;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background-color: #4096ff;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: #337ecc;
+    }
+
+    .btn-secondary {
+      background-color: #f5f7fa;
+      color: #666;
+    }
+
+    .btn-secondary:hover {
+      background-color: #e8ebf0;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      color: #4096ff;
+    }
+
+    .loading span {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #4096ff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .error提示 {
+      display: none;
+      padding: 16px;
+      background-color: #fff2f0;
+      border: 1px solid #ffccc7;
+      border-radius: 8px;
+      color: #f5222d;
+      margin: 20px 0;
+    }
+
+    .success提示 {
+      display: none;
+      padding: 16px;
+      background-color: #f0f9ff;
+      border: 1px solid #b3d8ff;
+      border-radius: 8px;
+      color: #1890ff;
+      margin: 20px 0;
+    }
+
+    /* 响应式适配 */
+    @media (max-width: 600px) {
+      .container {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 20px;
+      }
+
+      .upload-area {
+        padding: 30px 10px;
+      }
+
+      .latex-preview {
+        font-size: 16px;
+        padding: 15px;
+      }
+
+      .katex {
+        font-size: 1em !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 配置模态窗 -->
+  <div class="modal-overlay" id="configModal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="modal-title">API配置   <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank" rel="noopener noreferrer">申请API Key</a></div>
+        <button class="close-modal-btn" id="closeModalBtn">×</button>
+      </div>
+      <div class="config-form" id="configForm">
+        <div class="config-item">
+          <label for="apiKeyInput">API Key *</label>
+          <input type="text" id="apiKeyInput" placeholder="请输入ARK API Key" />
+        </div>
+        <div class="config-item">
+          <label for="modelInput">模型名称</label>
+          <input type="text" id="modelInput" placeholder="默认：doubao-seed-1-6-251015" />
+        </div>
+        <div class="config-item">
+          <label for="maxTokensInput">最大Token数</label>
+          <input type="number" id="maxTokensInput" min="100" max="2000" placeholder="默认：500" />
+        </div>
+        <div class="config-item">
+          <label for="thinkingSelect">深度思考模式</label>
+          <select id="thinkingSelect">
+            <option value="disabled">禁用</option>
+            <option value="enabled">启用</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="cancel-config-btn" id="cancelConfigBtn">取消</button>
+        <button class="save-config-btn" id="saveConfigBtn">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="container">
+
+    <!-- 侧边设置按钮 -->
+    <button class="settings-btn" id="settingsBtn">⚙️</button>
+
+    <h1>公式图片转LaTeX</h1>
+    <!-- 图片上传/粘贴区域 -->
+    <div class="upload-area" id="uploadArea">
+      <input type="file" id="fileInput" accept="image/*">
+      <div class="upload-icon">📷</div>
+      <div class="upload-text">点击上传公式图片 或 按 Ctrl+V 粘贴图片</div>
+      <div class="upload-tip">支持 PNG/JPG/JPEG 格式，建议图片清晰、背景纯白</div>
+      <img src="" alt="公式预览" class="preview-img" id="previewImg">
+    </div>
+
+    <!-- 加载状态 -->
+    <div class="loading" id="loading">
+      <span></span> 正在识别公式并转换为LaTeX代码...
+    </div>
+
+    <!-- 结果展示区域 -->
+    <div class="result-area" id="resultArea">
+      <div class="result-title">LaTeX代码（可编辑）：</div>
+      <!-- 代码编辑区（可编辑） -->
+      <textarea class="latex-code" id="latexCode"></textarea>
+      <!-- 公式渲染预览区 -->
+      <div class="latex-preview" id="latexPreview">请编辑上方LaTeX代码，点击「刷新渲染」查看效果</div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="resetBtn">重新上传</button>
+        <!-- 刷新渲染按钮 -->
+        <button class="btn btn-secondary" id="refreshRenderBtn">刷新渲染</button>
+        <button class="btn btn-primary" id="copyBtn">一键复制</button>
+      </div>
+    </div>
+
+    <!-- 错误提示 -->
+    <div class="error提示" id="errorTip"></div>
+    <!-- 成功提示 -->
+    <div class="success提示" id="successTip"></div>
+  </div>
+
+  <!-- 引入JS文件：先引API封装类，再引页面逻辑 -->
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>

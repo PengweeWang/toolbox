@@ -1,0 +1,32 @@
+{
+    "categories": [
+        "学术工具",
+        "开发工具"
+    ],
+    "tools": [
+        {
+            "id": 1,
+            "title": "Next SimpleTex",
+            "category": "学术工具",
+            "description": "在线公式OCR转Latex",
+            "icon": "fas fa-square-root-alt",
+            "url": "./next-simpletex"
+        },
+        {
+            "id": 2,
+            "title": "Fontawesome",
+            "category": "开发工具",
+            "description": "The internet's favorite icon library & toolkit.",
+            "icon": "fa-solid fa-font-awesome",
+            "url": "https://fontawesome.com/"
+        },
+        {
+            "id": 3 ,
+            "title": "阿里巴巴矢量图标库",
+            "category": "开发工具",
+            "description": "一个矢量图标管理平台，它允许设计师和开发者方便地使用、管理和分享图标资源。",
+            "icon": "fa-regular fa-file-image",
+            "url": "https://www.iconfont.cn/"
+        }
+    ]
+}
