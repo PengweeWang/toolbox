@@ -108,15 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return /Failed to fetch|NetworkError|Load failed|Network request failed|aborted|timed out/i.test(message || '');
   }
 
-  // 直连优先；仅当浏览器跨域/网络失败时才走第三方代理
+  // 默认通过自建 Cloudflare Worker 代理获取（Ark /models 不开放浏览器 CORS 预检）
   async function requestModelList(client) {
-    const directResult = await client.listModels();
-    if (directResult.success) return directResult;
+    let lastResult = null;
 
-    const directMessage = directResult.error?.message || '';
-    if (!isNetworkErrorMessage(directMessage)) return directResult;
-
-    let lastResult = directResult;
     for (let i = 0; i < MODEL_LIST_PROXY_RETRIES; i++) {
       // 代理偶发 502，退避后重试
       if (i > 0) await sleep(i * 500);
@@ -124,8 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
       lastResult = await client.listModels({ proxyBase: MODEL_LIST_PROXY });
       if (lastResult.success) return lastResult;
 
-      const proxyMessage = lastResult.error?.message || '';
-      const retryable = isNetworkErrorMessage(proxyMessage) || /\[(502|503|504)\]/.test(proxyMessage);
+      const message = lastResult.error?.message || '';
+      const retryable = isNetworkErrorMessage(message) || /\[(502|503|504)\]/.test(message);
       if (!retryable) break;
     }
     return lastResult;
