@@ -7,7 +7,7 @@ class ArkAPIClient {
    * @param {Object} config 配置项
    * @param {string} config.apiKey ARK API Key
    * @param {string} [config.baseURL] API基础地址，默认：https://ark.cn-beijing.volces.com/api/v3
-   * @param {string} [config.model] 默认使用的模型名，默认：doubao-seed-1-6-251015
+   * @param {string} [config.model] 默认使用的模型名，默认：doubao-seed-2-1-pro-260915
    * @param {number} [config.maxTokens] 默认最大生成token数，默认：300
    * @param {Object} [config.thinking] 默认深度思考配置，默认：{ type: "disabled" }
    */
@@ -19,7 +19,7 @@ class ArkAPIClient {
     // 基础配置
     this.config = {
       baseURL: config.baseURL || 'https://ark.cn-beijing.volces.com/api/v3',
-      model: config.model || 'doubao-seed-1-6-251015',
+      model: config.model || 'doubao-seed-2-1-pro-260915',
       maxTokens: config.maxTokens || 300,
       thinking: config.thinking || { type: "disabled" }, // 默认关闭深度思考
       apiKey: config.apiKey
@@ -38,13 +38,20 @@ class ArkAPIClient {
    * @param {Object} options 请求选项（method、body等）
    * @returns {Promise<Object>} API响应结果
    */
-  async _request(path, options) {
+  async _request(path, options = {}) {
+    let timer = null;
     try {
-      const url = `${this.config.baseURL}${path}`;
+      const url = options.url || `${this.config.baseURL}${path}`;
+      const controller = options.timeout ? new AbortController() : null;
+      if (controller) {
+        timer = setTimeout(() => controller.abort(), options.timeout);
+      }
+
       const response = await fetch(url, {
         method: options.method || 'POST',
         headers: { ...this.defaultHeaders, ...options.headers },
-        body: options.body ? JSON.stringify(options.body) : null
+        body: options.body ? JSON.stringify(options.body) : null,
+        signal: controller ? controller.signal : undefined
       });
 
       // 处理HTTP状态码错误
@@ -68,7 +75,42 @@ class ArkAPIClient {
           stack: error.stack
         }
       };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+  }
+
+  /**
+   * 获取当前 API Key 可用的模型列表
+   * @param {Object} [options] 可选参数
+   * @param {string} [options.proxyBase] CORS 代理前缀，如 https://proxy.corsfix.com/?
+   * @returns {Promise<Object>} 响应结果，data.data 为模型数组
+   */
+  async listModels(options = {}) {
+    const modelUrl = `${this.config.baseURL}/models`;
+    const url = options.proxyBase ? `${options.proxyBase}${modelUrl}` : modelUrl;
+    return this._request('', { method: 'GET', url, timeout: options.timeout || 10000 });
+  }
+
+  /**
+   * 【工具函数】从模型列表中筛选出适合“图片转文本”场景的模型
+   * 条件：支持 chat/completions、支持图片输入、输出文本、状态为 Published、支持关闭深度思考
+   * @param {Array} models 模型数组
+   * @returns {Array} 过滤后的模型数组
+   */
+  static filterVisionModels(models) {
+    if (!Array.isArray(models)) return [];
+
+    return models
+      .filter(model => model?.api_supported?.['chat/completions'] === true)
+      .filter(model => Array.isArray(model?.modalities?.input_modalities)
+        && model.modalities.input_modalities.includes('image'))
+      .filter(model => Array.isArray(model?.modalities?.output_modalities)
+        && model.modalities.output_modalities.includes('text'))
+      .filter(model => model.status === 'Published')
+      .filter(model => Array.isArray(model?.features?.thinking?.types)
+        && model.features.thinking.types.includes('disabled'))
+      .sort((a, b) => (b.created || 0) - (a.created || 0));
   }
 
   /**

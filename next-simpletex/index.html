@@ -208,6 +208,45 @@
       color: #666;
     }
 
+    .config-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .refresh-models-btn {
+      padding: 0 6px;
+      border: none;
+      background: none;
+      color: #4096ff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .refresh-models-btn:hover {
+      color: #337ecc;
+      text-decoration: underline;
+    }
+
+    .refresh-models-btn:disabled {
+      color: #b0b7c3;
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
+    .config-item select:disabled {
+      background-color: #f5f7fa;
+      color: #909399;
+      cursor: not-allowed;
+    }
+
+    .config-hint {
+      font-size: 12px;
+      color: #909399;
+      line-height: 1.4;
+    }
+
     .config-item input,
     .config-item select {
       padding: 8px 12px;
@@ -420,8 +459,14 @@
           <input type="text" id="apiKeyInput" placeholder="请输入ARK API Key" />
         </div>
         <div class="config-item">
-          <label for="modelInput">模型名称</label>
-          <input type="text" id="modelInput" placeholder="默认：doubao-seed-1-6-251015" />
+          <div class="config-label-row">
+            <label for="modelSelect">模型名称</label>
+            <button type="button" class="refresh-models-btn" id="refreshModelsBtn">刷新</button>
+          </div>
+          <select id="modelSelect">
+            <option value="">请先填写 API Key 后加载模型</option>
+          </select>
+          <div class="config-hint">浏览器跨域受限时会经 CORS 代理获取模型列表。</div>
         </div>
         <div class="config-item">
           <label for="maxTokensInput">最大Token数</label>

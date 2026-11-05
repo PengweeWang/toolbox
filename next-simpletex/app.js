@@ -4,11 +4,17 @@
  */
 document.addEventListener('DOMContentLoaded', () => {
   // ==================== Cookie 工具函数====================
-  function setCookie(name, value, days = 30) {
-    const date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-    const expires = `expires=${date.toUTCString()}`;
-    document.cookie = `${name}=${encodeURIComponent(value)}; ${expires}; path=/`;
+  // days 不传时使用极长有效期，即“不限日期”（浏览器可能会限制最大有效期）
+  const COOKIE_EXPIRES_FOREVER = 'Fri, 31 Dec 9999 23:59:59 GMT';
+
+  function setCookie(name, value, days) {
+    let expires = COOKIE_EXPIRES_FOREVER;
+    if (typeof days === 'number') {
+      const date = new Date();
+      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+      expires = date.toUTCString();
+    }
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
   }
 
   function getCookie(name) {
@@ -29,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==================== 默认配置项 ====================
   const DEFAULT_CONFIG = {
     apiKey: '',
-    model: 'doubao-seed-1-6-251015',
+    model: 'doubao-seed-2-1-pro-260915',
     maxTokens: 500,
     thinking: { type: "disabled" }
   };
@@ -43,7 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelConfigBtn: document.getElementById('cancelConfigBtn'),
     // 配置表单DOM（保持不变）
     apiKeyInput: document.getElementById('apiKeyInput'),
-    modelInput: document.getElementById('modelInput'),
+    modelSelect: document.getElementById('modelSelect'),
+    refreshModelsBtn: document.getElementById('refreshModelsBtn'),
     maxTokensInput: document.getElementById('maxTokensInput'),
     thinkingSelect: document.getElementById('thinkingSelect'),
     saveConfigBtn: document.getElementById('saveConfigBtn'),
@@ -70,6 +77,8 @@ document.addEventListener('DOMContentLoaded', () => {
     dom.apiKeyInput.focus();
     // 禁止背景滚动
     document.body.style.overflow = 'hidden';
+    // 根据当前 API Key 加载模型列表
+    loadModelOptions();
   }
 
   // 关闭模态窗
@@ -84,6 +93,117 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==================== 初始化配置 ====================
   let currentConfig = { ...DEFAULT_CONFIG };
   let arkClient = null;
+  let modelListRequestId = 0;
+
+  // Ark 的 /models 接口没有开放浏览器 CORS 预检，跨域失败时通过自建 Cloudflare Worker 代理获取
+  // Worker 源码见 ark-cors-proxy.worker.js
+  const MODEL_LIST_PROXY = 'https://ark-cors-proxy.byc.de5.net/?';
+  const MODEL_LIST_PROXY_RETRIES = 3;
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function isNetworkErrorMessage(message) {
+    return /Failed to fetch|NetworkError|Load failed|Network request failed|aborted|timed out/i.test(message || '');
+  }
+
+  // 直连优先；仅当浏览器跨域/网络失败时才走第三方代理
+  async function requestModelList(client) {
+    const directResult = await client.listModels();
+    if (directResult.success) return directResult;
+
+    const directMessage = directResult.error?.message || '';
+    if (!isNetworkErrorMessage(directMessage)) return directResult;
+
+    let lastResult = directResult;
+    for (let i = 0; i < MODEL_LIST_PROXY_RETRIES; i++) {
+      // 代理偶发 502，退避后重试
+      if (i > 0) await sleep(i * 500);
+
+      lastResult = await client.listModels({ proxyBase: MODEL_LIST_PROXY });
+      if (lastResult.success) return lastResult;
+
+      const proxyMessage = lastResult.error?.message || '';
+      const retryable = isNetworkErrorMessage(proxyMessage) || /\[(502|503|504)\]/.test(proxyMessage);
+      if (!retryable) break;
+    }
+    return lastResult;
+  }
+
+  // 渲染模型下拉框；models 为空时显示占位提示
+  function renderModelOptions(models, placeholder, preferredModel) {
+    const desired = preferredModel || dom.modelSelect.value || currentConfig.model || DEFAULT_CONFIG.model;
+    const list = Array.isArray(models) ? models.slice() : [];
+
+    if (list.length > 0 && desired && !list.some(model => model.id === desired)) {
+      // 保留当前配置的模型，避免接口未返回该模型时配置丢失
+      list.unshift({ id: desired, name: desired, version: '当前配置' });
+    }
+
+    dom.modelSelect.innerHTML = '';
+
+    if (list.length === 0) {
+      dom.modelSelect.appendChild(new Option(placeholder || '暂无可用模型', ''));
+      dom.modelSelect.disabled = true;
+      return;
+    }
+
+    list.forEach(model => {
+      const label = model.version
+        ? `${model.name || model.id}（${model.version}）`
+        : (model.name || model.id);
+      const option = new Option(label, model.id);
+      option.title = model.id;
+      dom.modelSelect.appendChild(option);
+    });
+
+    dom.modelSelect.disabled = false;
+    dom.modelSelect.value = list.some(model => model.id === desired) ? desired : list[0].id;
+  }
+
+  // 从 ARK API 拉取模型列表并按图片转文本场景过滤
+  async function loadModelOptions() {
+    const apiKey = (dom.apiKeyInput.value || '').trim();
+    const requestId = ++modelListRequestId;
+    const preferredModel = dom.modelSelect.value || currentConfig.model;
+
+    if (!apiKey) {
+      renderModelOptions([], '请先填写 API Key 后加载模型', preferredModel);
+      return;
+    }
+
+    dom.modelSelect.disabled = true;
+    dom.modelSelect.innerHTML = '';
+    dom.modelSelect.appendChild(new Option('模型加载中…', ''));
+    if (dom.refreshModelsBtn) dom.refreshModelsBtn.disabled = true;
+
+    try {
+      const client = new ArkAPIClient({ apiKey });
+      const response = await requestModelList(client);
+      if (requestId !== modelListRequestId) return;
+
+      if (!response.success) {
+        throw new Error(response.error?.message || '未知错误');
+      }
+
+      const models = ArkAPIClient.filterVisionModels(response.data?.data);
+      renderModelOptions(models, '没有找到支持图片输入的模型', preferredModel);
+    } catch (error) {
+      if (requestId !== modelListRequestId) return;
+
+      // 加载失败时至少保留当前配置的模型，保证仍可保存
+      const fallback = currentConfig.model
+        ? [{ id: currentConfig.model, name: currentConfig.model, version: '当前配置' }]
+        : [];
+      renderModelOptions(fallback, `模型列表加载失败：${error.message}`, preferredModel);
+      showErrorTip(`模型列表加载失败：${error.message}`);
+    } finally {
+      if (requestId === modelListRequestId && dom.refreshModelsBtn) {
+        dom.refreshModelsBtn.disabled = false;
+      }
+    }
+  }
 
   function loadConfigFromCookie() {
     const savedConfig = getCookie('ark_latex_config');
@@ -94,7 +214,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 填充到表单
         dom.apiKeyInput.value = currentConfig.apiKey || '';
-        dom.modelInput.value = currentConfig.model || DEFAULT_CONFIG.model;
         dom.maxTokensInput.value = currentConfig.maxTokens || DEFAULT_CONFIG.maxTokens;
         dom.thinkingSelect.value = currentConfig.thinking.type || 'disabled';
       } catch (e) {
@@ -102,10 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       // 无Cookie时填充默认值到表单
-      dom.modelInput.value = DEFAULT_CONFIG.model;
       dom.maxTokensInput.value = DEFAULT_CONFIG.maxTokens;
       dom.thinkingSelect.value = DEFAULT_CONFIG.thinking.type;
     }
+    renderModelOptions([], '请先填写 API Key 后加载模型');
     // 初始化API客户端
     initArkClient();
   }
@@ -124,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function saveConfigToCookie() {
     const newConfig = {
       apiKey: dom.apiKeyInput.value.trim(),
-      model: dom.modelInput.value.trim() || DEFAULT_CONFIG.model,
+      model: dom.modelSelect.value,
       maxTokens: parseInt(dom.maxTokensInput.value) || DEFAULT_CONFIG.maxTokens,
       thinking: { type: dom.thinkingSelect.value }
     };
@@ -135,13 +254,19 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // 验证模型已选择
+    if (!newConfig.model) {
+      showErrorTip('请先选择模型（可点击“刷新”重新加载模型列表）');
+      return;
+    }
+
     // 验证maxTokens为数字
     if (isNaN(newConfig.maxTokens) || newConfig.maxTokens < 100) {
       showErrorTip('最大Token数必须是≥100的数字');
       return;
     }
 
-    // 保存到Cookie
+    // 保存到Cookie（不限日期）
     setCookie('ark_latex_config', JSON.stringify(newConfig));
     currentConfig = newConfig;
     
@@ -176,6 +301,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 保存配置按钮事件
     dom.saveConfigBtn.addEventListener('click', saveConfigToCookie);
+
+    // 重新加载模型列表
+    if (dom.refreshModelsBtn) {
+      dom.refreshModelsBtn.addEventListener('click', loadModelOptions);
+    }
+    // API Key 变更后重新拉取模型列表
+    dom.apiKeyInput.addEventListener('change', loadModelOptions);
 
     // 事件监听
     dom.uploadArea.addEventListener('click', () => {
