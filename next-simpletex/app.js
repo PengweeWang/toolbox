@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Worker 源码见 ark-cors-proxy.worker.js
   const MODEL_LIST_PROXY = 'https://ark-cors-proxy.byc.de5.net/?';
 
-  // 单次请求，失败后由用户点击“刷新”手动重试
+  // 单次请求，失败后由用户点击“获取模型列表”手动重试
   async function requestModelList(client) {
     return client.listModels({ proxyBase: MODEL_LIST_PROXY });
   }
@@ -227,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? [{ id: currentConfig.model, name: currentConfig.model, version: '当前配置' }]
           : []);
       renderModelOptions(fallback, `模型列表加载失败：${error.message}`, preferredModel);
-      showErrorTip(`模型列表加载失败：${error.message}（可点击“刷新”重试）`);
+      showErrorTip(`模型列表加载失败：${error.message}（可点击“获取模型列表”重试）`);
     } finally {
       if (requestId === modelListRequestId && dom.refreshModelsBtn) {
         dom.refreshModelsBtn.disabled = false;
@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 验证模型已选择
     if (!newConfig.model) {
-      showErrorTip('请先选择模型（可点击“刷新”重新加载模型列表）');
+      showErrorTip('请先选择模型（可点击“获取模型列表”重新加载）');
       return;
     }
 
@@ -336,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dom.refreshModelsBtn) {
       dom.refreshModelsBtn.addEventListener('click', loadModelOptions);
     }
-    // 没有缓存时，填入 API Key 后自动加载一次；已有缓存则手动点“刷新”
+    // 没有缓存时，填入 API Key 后自动加载一次；已有缓存则手动点“获取模型列表”
     dom.apiKeyInput.addEventListener('change', () => {
       if (getCachedModelList().length === 0) {
         loadModelOptions();
