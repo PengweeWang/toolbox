@@ -32,6 +32,43 @@ document.addEventListener('DOMContentLoaded', () => {
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
   }
 
+  // ==================== 模型列表缓存 ====================
+  const MODEL_LIST_COOKIE = 'ark_model_list';
+
+  function getCachedModelList() {
+    const raw = getCookie(MODEL_LIST_COOKIE);
+    if (!raw) return [];
+
+    try {
+      const list = JSON.parse(raw);
+      if (!Array.isArray(list)) return [];
+
+      return list
+        .filter(item => item && item.id)
+        .map(item => ({
+          id: String(item.id),
+          name: item.name || String(item.id),
+          version: item.version || ''
+        }));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveModelListToCookie(models) {
+    const compact = models.map(model => ({
+      id: model.id,
+      name: model.name || model.id,
+      version: model.version || ''
+    }));
+    const value = JSON.stringify(compact);
+
+    // Cookie 单条通常限制 4KB，超限就不缓存
+    if (encodeURIComponent(value).length > 3800) return;
+
+    setCookie(MODEL_LIST_COOKIE, value);
+  }
+
   // ==================== 默认配置项 ====================
   const DEFAULT_CONFIG = {
     apiKey: '',
@@ -77,8 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
     dom.apiKeyInput.focus();
     // 禁止背景滚动
     document.body.style.overflow = 'hidden';
-    // 根据当前 API Key 加载模型列表
-    loadModelOptions();
+    // 优先读取 Cookie 缓存，没有缓存时才请求接口
+    loadModelOptionsFromCacheOrApi();
   }
 
   // 关闭模态窗
@@ -95,35 +132,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let arkClient = null;
   let modelListRequestId = 0;
 
-  // Ark 的 /models 接口没有开放浏览器 CORS 预检，跨域失败时通过自建 Cloudflare Worker 代理获取
+  // Ark 的 /models 接口没有开放浏览器 CORS 预检，默认通过自建 Cloudflare Worker 代理获取
   // Worker 源码见 ark-cors-proxy.worker.js
   const MODEL_LIST_PROXY = 'https://ark-cors-proxy.byc.de5.net/?';
-  const MODEL_LIST_PROXY_RETRIES = 3;
 
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  function isNetworkErrorMessage(message) {
-    return /Failed to fetch|NetworkError|Load failed|Network request failed|aborted|timed out/i.test(message || '');
-  }
-
-  // 默认通过自建 Cloudflare Worker 代理获取（Ark /models 不开放浏览器 CORS 预检）
+  // 单次请求，失败后由用户点击“刷新”手动重试
   async function requestModelList(client) {
-    let lastResult = null;
-
-    for (let i = 0; i < MODEL_LIST_PROXY_RETRIES; i++) {
-      // 代理偶发 502，退避后重试
-      if (i > 0) await sleep(i * 500);
-
-      lastResult = await client.listModels({ proxyBase: MODEL_LIST_PROXY });
-      if (lastResult.success) return lastResult;
-
-      const message = lastResult.error?.message || '';
-      const retryable = isNetworkErrorMessage(message) || /\[(502|503|504)\]/.test(message);
-      if (!retryable) break;
-    }
-    return lastResult;
+    return client.listModels({ proxyBase: MODEL_LIST_PROXY });
   }
 
   // 渲染模型下拉框；models 为空时显示占位提示
@@ -157,6 +172,21 @@ document.addEventListener('DOMContentLoaded', () => {
     dom.modelSelect.value = list.some(model => model.id === desired) ? desired : list[0].id;
   }
 
+  // 有 Cookie 缓存时直接使用，返回是否命中缓存
+  function loadModelOptionsFromCache() {
+    const cachedModels = getCachedModelList();
+    if (cachedModels.length > 0) {
+      renderModelOptions(cachedModels, '暂无可用模型');
+      return true;
+    }
+    return false;
+  }
+
+  function loadModelOptionsFromCacheOrApi() {
+    if (loadModelOptionsFromCache()) return;
+    loadModelOptions();
+  }
+
   // 从 ARK API 拉取模型列表并按图片转文本场景过滤
   async function loadModelOptions() {
     const apiKey = (dom.apiKeyInput.value || '').trim();
@@ -183,16 +213,21 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const models = ArkAPIClient.filterVisionModels(response.data?.data);
+      // 成功获取后缓存到 Cookie，下次打开直接使用
+      saveModelListToCookie(models);
       renderModelOptions(models, '没有找到支持图片输入的模型', preferredModel);
     } catch (error) {
       if (requestId !== modelListRequestId) return;
 
-      // 加载失败时至少保留当前配置的模型，保证仍可保存
-      const fallback = currentConfig.model
-        ? [{ id: currentConfig.model, name: currentConfig.model, version: '当前配置' }]
-        : [];
+      // 加载失败时优先保留缓存的模型，其次保留当前配置模型
+      const cachedModels = getCachedModelList();
+      const fallback = cachedModels.length > 0
+        ? cachedModels
+        : (currentConfig.model
+          ? [{ id: currentConfig.model, name: currentConfig.model, version: '当前配置' }]
+          : []);
       renderModelOptions(fallback, `模型列表加载失败：${error.message}`, preferredModel);
-      showErrorTip(`模型列表加载失败：${error.message}`);
+      showErrorTip(`模型列表加载失败：${error.message}（可点击“刷新”重试）`);
     } finally {
       if (requestId === modelListRequestId && dom.refreshModelsBtn) {
         dom.refreshModelsBtn.disabled = false;
@@ -219,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dom.maxTokensInput.value = DEFAULT_CONFIG.maxTokens;
       dom.thinkingSelect.value = DEFAULT_CONFIG.thinking.type;
     }
-    renderModelOptions([], '请先填写 API Key 后加载模型');
+    renderModelOptions(getCachedModelList(), '请先填写 API Key 后加载模型');
     // 初始化API客户端
     initArkClient();
   }
@@ -301,8 +336,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dom.refreshModelsBtn) {
       dom.refreshModelsBtn.addEventListener('click', loadModelOptions);
     }
-    // API Key 变更后重新拉取模型列表
-    dom.apiKeyInput.addEventListener('change', loadModelOptions);
+    // 没有缓存时，填入 API Key 后自动加载一次；已有缓存则手动点“刷新”
+    dom.apiKeyInput.addEventListener('change', () => {
+      if (getCachedModelList().length === 0) {
+        loadModelOptions();
+      }
+    });
 
     // 事件监听
     dom.uploadArea.addEventListener('click', () => {
